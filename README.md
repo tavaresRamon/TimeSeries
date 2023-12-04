@@ -11,9 +11,7 @@ Este trabalho explora a análise de séries temporais dos preços médios da gas
 - Reversão da diferenciação para comparação com valores reais na escala original.
 - Cálculo de métricas de precisão (RMSE, MAE e MAPE) e visualização de resultados através de gráficos.
 
-## Introdução
-
-A análise de séries temporais é uma ferramenta valiosa para entender, modelar e prever padrões em conjuntos sequenciais de dados. Este estudo utiliza os preços médios da gasolina comum como exemplo prático, passando por diversas etapas:
+Este estudo utiliza os preços médios da gasolina comum como exemplo prático, passando por diversas etapas:
 
 - Coleta de dados históricos.
 - Decomposição da série em componentes fundamentais.
@@ -21,6 +19,6 @@ A análise de séries temporais é uma ferramenta valiosa para entender, modelar
 - Modelagem SARMA para previsões futuras.
 - Validação do modelo e comparação entre resultados previstos e valores reais, usando métricas para avaliação de desempenho.
 
-**Link para a análise completa:** [Análise Completa](https://rpubs.com/newstatistic/1123621)
+**Link  da análise completa:** [Análise Completa](https://rpubs.com/newstatistic/1123621)
 
-Este estudo demonstra a importância e aplicabilidade da análise de séries temporais em contextos do mundo real, fornecendo técnicas valiosas para tomadas de decisão informadas em diversos domínios.
+Este estudo demonstra a aplicabilidade da análise de séries temporais em contextos do mundo real, fornecendo técnicas valiosas.
