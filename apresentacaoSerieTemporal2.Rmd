@@ -1,0 +1,353 @@
+---
+title: "Análise de Séries Temporais"
+author:
+- 'Aluno: Ramon Lima De Oliveira Tavares'
+output:
+  html_document:
+    df_print: paged
+    fig_width: 12
+    fig_height: 8
+  pdf_document:
+    latex_engine: xelatex
+---
+# Resumo
+
+Neste trabalho, exploramos a análise de séries temporais aplicada aos preços médios de gasolina comum. Utilizamos técnicas como decomposição de séries temporais, testes de estacionariedade, diferenciação de dados, modelagem SARIMA e previsão para entender e prever tendências nos preços da gasolina.
+
+# Introdução
+   A análise de séries temporais é uma ferramenta utilizada em diversas áreas, permitindo entender,modelar e prever padrões em conjuntos de dados sequenciais. Essa técnica encontra aplicabilidade em uma variedade de contextos. Neste contexto, exploramos a aplicação da análise de séries temporais nos preços médios da gasolina comum como um exemplo prático. Iniciamos com a coleta de dados históricos, seguida pela decomposição da série em componentes fundamentais, tais como tendência, sazonalidade e erro. A identificação desses elementos são necessários para compreender a estrutura dos dados e modelar seus comportamentos. Ao longo do processo, confrontamos desafios comuns na análise de séries temporais, como a estacionariedade dos dados. Para garantir a aplicabilidade de modelos preditivos, foi essencial tornar a série estacionária por meio de diferenciação. A modelagem SARIMA (Seasonal Autoregressive Integrated Moving Average) foi empregada para realizar previsões dos preços futuros da gasolina. A escolha do modelo adequado e a interpretação de seus resultados são partes vitais nesse processo. Além disso, a validação do modelo, incluindo a análise de resíduos e gráfico de autocorrelação ACF. Após gerar as previsões, comparamos os resultados obtidos com os valores reais, usando métricas como RMSE (Root Mean Squared Error), MAE (Mean Absolute Error) e MAPE (Mean Absolute Percentage Error). Essas métricas nos ajudam a avaliar o desempenho do modelo e identificar possíveis melhorias ou ajustes necessários. Essa análise exemplifica a importância e a aplicabilidade da análise de séries temporais em contextos do mundo real, fornecendo técnicas valiosas para tomadas de decisão informadas em diversos domínios.
+
+**Instalação de pacotes e Ccarregamento dos dados de preços da Gasolina**
+```{r, warning=FALSE, message=FALSE}
+pacman::p_load("tidyverse","tseries","stats","patchwork","forecast","caTools","grafics")
+dados <- read.csv(
+  "C:\\Users\\tavar\\OneDrive\\Área de Trabalho\\focosIncendio\\precoGasolina.csv")
+```
+
+**Pré-processamento: Ajuste da Data**
+```{r, message=FALSE}
+
+dados <-dados %>%
+  mutate(data = as.Date(paste(data,"01",sep = "-"),format="%Y-%m-%d"))
+dados
+```
+
+**Decomposição de Séries Temporais**
+
+Em seguida, realizamos a decomposição da série temporal dos preços da gasolina para identificar seus componentes principais: tendência, sazonalidade e erro.
+```{r,message=FALSE}
+serieTemporal <- ts(dados$preco_medio_gasolina_comum, frequency = 12)
+decomposicao <- stl(serieTemporal, s.window = "periodic")
+
+tendencia <- decomposicao$time.series[,"trend"]
+sazonalidade <- decomposicao$time.series[,"seasonal"]
+erro <- decomposicao$time.series[,"remainder"]
+
+dadosDecomposicao <- data.frame(
+  data = dados$data,
+  tendencia = tendencia,
+  sazonalidade = sazonalidade,
+  erro = erro
+)
+
+graficoSerie <-dados %>%
+  ggplot(aes(x = data, y=preco_medio_gasolina_comum)) +
+  geom_line(color = "purple") +
+  labs(title = "Série Temporal Preço Gasolina",
+       x = "Data", y = "Preço Gasolina")
+
+###############################################################################
+
+graficoTendencia <-dadosDecomposicao %>%
+  ggplot(aes(x = data, y=tendencia)) +
+  geom_line(color = "blue") +
+  labs(title = "Componente de Tendência",
+       x = "Data", y = "Tendência")
+
+###############################################################################
+
+graficoSazonalidade <-dadosDecomposicao %>%
+  ggplot(aes(x = data, y=sazonalidade)) +
+  geom_bar(stat = "identity",fill = "darkgreen") +
+  labs(title = "Componente de Sazonalidade",
+       x = "Data", y = "Sazonalidade")
+
+###############################################################################
+
+graficoErro <-dadosDecomposicao %>%
+  ggplot(aes(x = data, y=erro)) +
+  geom_bar(stat = "identity", fill = "red") +
+  labs(title = "Componente de Resíduos",
+       x = "Data", y = "Resíduos")
+
+vizualisarDecomposicao <- graficoSerie /graficoTendencia / graficoSazonalidade / graficoErro
+vizualisarDecomposicao
+```
+
+**Teste de Estacionariedade**
+
+Para determinar a estacionariedade da série temporal, realizamos o teste ADF (Augmented Dickey-Fuller) e interpretamos o p-valor.
+```{r, message=FALSE}
+
+funcaoADF <- function(serie){
+  testeAdf <- adf.test(serie)
+  pValor = testeAdf$p.value
+  resposta <- if(pValor<0.05){
+    paste("A série é estacionária. P-valor = ",round(pValor,4)," é menor que o nível de significância de 5%, logo, aceitamos  a hipótese alternativa de que a série é estacionária.")
+  }else{
+    paste("A série não é estacionária. P-valor = ",round(pValor,4)," é maior que o nível de significância de 5%, logo, aceitamos a hipótese nula de que a série não é estacionária.")
+  }
+  retorneLista <- list(
+    resposta =  resposta,
+    pValor = pValor,
+    hipotese = testeAdf$alternative
+  )
+  
+  return(retorneLista)
+}
+verificacaoEstacionariedade <- funcaoADF(dados$preco_medio_gasolina_comum)
+verificacaoEstacionariedade$resposta
+```
+
+**Aplicando Diferenciação nos Dados**
+
+Caso a série não seja estacionária, aplicamos a diferenciação nos dados e realizamos novamente o teste ADF para verificar a estacionariedade.
+```{r, message=FALSE}
+
+dadosDiferenciados <- diff(dados$preco_medio_gasolina_comum)
+
+dadosNovosDiferenciados <- dados %>%
+  mutate(
+    dadosDiferenciados = c(NA,diff(preco_medio_gasolina_comum))
+  )
+dadosNovosDiferenciados
+dadosNovosDiferenciadosSemNA <- dadosNovosDiferenciados[-1,]
+dadosNovosDiferenciadosSemNA
+```
+
+
+**Verificação da Estacionariedade após a Diferenciação**
+
+Neste bloco, verificamos se a série temporal ficou estacionária após a diferenciação. A função funcaoADF é utilizada para aplicar o teste ADF à série diferenciada.
+```{r, message=FALSE}
+
+verificacaoEstacionariedade2 <-suppressWarnings(funcaoADF(dadosNovosDiferenciadosSemNA$dadosDiferenciados))
+verificacaoEstacionariedade2$resposta
+```
+
+Em seguida, plotamos a série temporal diferenciada e destacamos o p-valor do teste ADF no gráfico para verificar a estacionariedade.
+```{r, message=FALSE}
+dadosNovosDiferenciadosSemNA %>%
+  ggplot(aes(x=data, y=dadosDiferenciados)) +
+  geom_line(color="blue") +
+  labs(title = "Série temporal referente ao preço da gasolina",
+     x = "Lags Mensais", y = "Preços da gasolina em escala diferenciada") +
+  annotate("text", x = as.Date("2005-01-01"), y = -1,
+           label = paste("p-valor do teste ADF = ",
+                         verificacaoEstacionariedade2$pValor,
+                         verificacaoEstacionariedade2$hipotese),
+           hjust = 0, vjust = 1, color = "red")
+```
+
+
+**Criação da Série Temporal Diferenciada**
+
+Neste bloco, criamos uma série temporal a partir dos dados diferenciados, estabelecemos o tamanho da série e a janela de previsão.
+```{r, message=FALSE}
+serieTemporalDiferenciada <- ts(dadosNovosDiferenciadosSemNA$dadosDiferenciados,
+                                frequency = 12)
+
+tamanhoSerie <-length(serieTemporalDiferenciada)
+janelaPrevisao = 6
+```
+
+**Divisão em Conjuntos de Treino e Teste**
+Aqui dividimos a série diferenciada em conjuntos de treino e teste para a modelagem e previsão.
+```{r, message=FALSE}
+dadosTreino <- serieTemporalDiferenciada[1:(tamanhoSerie-janelaPrevisao)]
+dadosTeste <- serieTemporalDiferenciada[(tamanhoSerie-janelaPrevisao+1):tamanhoSerie]
+
+totalLagsTreino <- length(dadosTreino)
+totalLagsTeste <- length(dadosTeste)
+```
+
+Agora, criamos data frames para os conjuntos de treino e teste e plotamos esses dados para visualização.
+```{r, message=FALSE}
+dfTreino <- data.frame(
+  lags = rep(1:totalLagsTreino),
+  valores = as.numeric(dadosTreino)
+)
+
+dfTeste <- data.frame(
+  lags = rep((totalLagsTreino+1):(totalLagsTreino+totalLagsTeste)),
+  valores = as.numeric(dadosTeste)
+)
+
+# Plotar os dados de treino e teste
+ggplot() +
+  geom_line(data = dfTreino, aes(x = lags, y = valores, color = "Treino")) +
+  geom_line(data = dfTeste, aes(x = lags, y = valores, color = "Teste")) +
+  labs(title = "Conjuntos de Treino e Teste",
+       x = "Lags Mensais", y = "Valor") +
+  scale_color_manual(values = c("Treino" = "blue", "Teste" = "red"),name="") +
+  theme_minimal()
+```
+
+**Determinação do Melhor Modelo usando auto.arima**
+
+Aqui, usamos a função auto.arima para determinar o melhor modelo ARIMA para a série temporal diferenciada.
+```{r, message=FALSE}
+melhorModelo <- auto.arima(serieTemporalDiferenciada)
+summary(melhorModelo)
+```
+*
+**Criação do Modelo SARIMA**
+
+Criamos um modelo SARIMA utilizando os dados de treino e exibimos um resumo do modelo.
+```{r}
+modelo <- Arima(dadosTreino, order = c(2, 0, 1), seasonal = list(order = c(0, 0, 2), period = 12),
+                include.mean = TRUE)
+summary(modelo)
+```
+
+**Geração de Previsões com o Modelo**
+
+Geramos previsões com o modelo ARIMA para um determinado horizonte de previsão e plotamos os resultados.
+```{r}
+previsao <- forecast(modelo, h = totalLagsTeste)
+plot(previsao)
+```
+
+**Intervalos de Confiança das Previsões**
+
+Calculamos os intervalos de confiança para as previsões realizadas.
+```{r}
+inferior <- as.numeric(previsao$lower[,"95%"])
+superior <- as.numeric(previsao$upper[,"95%"])
+```
+
+**Criação do DataFrame dadosReaisPrevistos**
+
+Neste bloco, é criado um DataFrame dadosReaisPrevistos que contém as previsões, valores reais e intervalos de confiança.
+```{r}
+dadosReaisPrevistos <- data.frame(
+  lags = rep((totalLagsTreino+1):(totalLagsTreino+totalLagsTeste)),
+  reais = as.numeric(dadosTeste),
+  previstos = previsao$mean,
+  inferior = inferior,
+  superior = superior
+)
+print(dadosReaisPrevistos)
+```
+
+**Identificação da Posição Inicial e Final**
+
+Aqui, identificamos a posição inicial e final no DataFrame dadosReaisPrevistos.
+```{r}
+posicaoInicial<-dadosReaisPrevistos[1,1]
+posicaoInicial
+posicaoFinal <- tail(dadosReaisPrevistos$lags, 1)
+posicaoFinal
+```
+
+**Cálculo do RMSE**
+Calculamos o RMSE (Root Mean Squared Error) para avaliar a precisão das previsões.
+```{r}
+rmse <- sqrt(mean((dadosReaisPrevistos$reais - dadosReaisPrevistos$previstos)^2))
+rmse
+```
+
+**Análise de Diagnóstico do Modelo**
+
+Realizamos uma análise de diagnóstico do modelo usando tsdiag para identificar possíveis problemas.
+```{r}
+tsdiag(modelo)
+```
+
+**Gráfico com Intervalo de Confiança**
+
+É plotado um gráfico que mostra os conjuntos de treino, teste, previsões e intervalos de confiança.
+```{r}
+# Plot com intervalo de confiança
+ggplot() +
+  geom_line(data = dfTreino, aes(x = lags, y = valores, color = "Treino")) +
+  geom_point(data = dfTeste, aes(x = lags, y = valores, color = "Reais")) +
+  geom_point(data = dadosReaisPrevistos, aes(x = lags, y = previstos, color = "Previstos")) +
+  geom_ribbon(data = dadosReaisPrevistos, aes(x = lags, ymin = inferior, ymax = superior), alpha = 0.3, fill = "green") +
+  labs(title = "Série histórica do preço da gasolina comum (jan de 2001 a jan 2023)",
+       x = "Lags Mensais", y = "Valores em escala Diferenciada") +
+  scale_color_manual(values = c("Treino" = "purple", "Reais" = "blue", "Previstos" = "red"), name = "") +
+  theme_minimal()
+```
+
+**Gráfico Adicional com Conjuntos de Treino, Teste e Previsões**
+
+Um segundo gráfico é gerado para mostrar os conjuntos de treino, teste, e previsões, com foco nos lags mensais e seus valores em escala diferenciada.
+```{r}
+ggplot() +
+  geom_point(data = dfTeste, aes(x = lags, y = valores, color = "Reais")) +
+  geom_point(data = dadosReaisPrevistos, aes(x = lags, y = previstos, color = "Previstos")) +
+  geom_ribbon(data = dadosReaisPrevistos, aes(x = lags, ymin = inferior, ymax = superior), alpha = 0.3, fill = "green") +
+  labs(title = "Conjuntos de Treino, Teste e Previsões com Intervalo de Confiança",
+       x = "Lags Mensais", y = "Valores em escala Diferenciada") +
+  scale_color_manual(values = c("Reais" = "blue", "Previstos" = "red"), name = "") +
+  theme_minimal()
+```
+
+**Retorno dos Valores na Escala Real**
+
+Nesta seção, revertemos a diferenciação para obter os valores reais e previstos na escala original.
+Utilizando nesse caso, a função cumsum().
+```{r}
+dadosEscalaReal <- cumsum(dadosReaisPrevistos$reais) + dados$preco_medio_gasolina_comum[posicaoInicial]
+dadosPreditosEscalaReal <- cumsum(dadosReaisPrevistos$previstos) + dados$preco_medio_gasolina_comum[posicaoInicial]
+
+datas = dados$data[posicaoInicial:posicaoFinal]
+
+dadosEscalaReal <-data.frame(
+  data = datas,
+  reais = dadosEscalaReal,
+  previstos = dadosPreditosEscalaReal
+)
+print(dadosEscalaReal)
+
+print(dados$preco_medio_gasolina_comum[(posicaoInicial):posicaoFinal+1])
+```
+
+**Criação do DataFrame dadosEscalaRealDiff**
+```{r}
+
+dadosEscalaRealDiff <- dadosEscalaReal %>%
+  mutate(diff = reais - previstos)
+```
+
+**Gráfico com Linhas e Valores de Diferença**
+```{r, fig.width=13}
+# Gráfico com linhas e valores de diferença
+ggplot(data = dadosEscalaReal, aes(x = data)) +
+  geom_point(aes(y = reais, color = "Reais"), size = 3) +
+  geom_point(aes(y = previstos, color = "Previstos"), size = 3) +
+  geom_segment(aes(x = data, y = reais, xend = data, yend = previstos), color = "black", alpha = 0.5) +
+  geom_label(data = dadosEscalaRealDiff, aes(x = data, y = (reais + previstos) / 2, label = sprintf("%.2f", diff)), 
+             hjust = -0.2, color = "black") +
+  labs(title = "Valores Reais e Previstos",
+       x = "Data", y = "Valor da Gasolina Comum em R$") +
+  scale_color_manual(values = c("blue", "red"), name = "", labels = c("Reais", "Previstos")) +
+  theme_minimal()
+```
+
+**Cálculo do RMSE, MAE e MAPE**
+```{r}
+rmse <- sqrt(mean((dadosEscalaReal$reais - dadosEscalaReal$previstos)^2))
+rmse
+
+mae <- mean(abs(dadosEscalaReal$reais - dadosEscalaReal$previstos))
+mae
+
+mape <- mean(abs((dadosEscalaReal$reais - dadosEscalaReal$previstos) / dadosEscalaReal$reais)) * 100
+paste(round(mape,2),"%")
+```
+
+# Conclusão
+Ao longo desta análise do preço médio da gasolina comum, exploramos diversas etapas importantes no processo de análise de séries temporais. Iniciamos com a decomposição da série temporal em componentes de tendência, sazonalidade e resíduos. Observamos que a série original não era estacionária, mas após a diferenciação dos dados, obtivemos uma série estacionária. A aplicação de modelos de previsão ARIMA nos permitiu realizar previsões dos preços futuros da gasolina. O modelo ajustado apresentou um desempenho relativamente satisfatório ao realizar previsões, como evidenciado pelos intervalos de confiança das previsões. Ao trazer os resultados de volta para a escala original dos valores de preço da gasolina, pudemos comparar as previsões com os valores reais. Apesar de alguns desvios entre os valores previstos e reais, o modelo conseguiu capturar a tendência geral dos dados. Por fim, avaliamos a precisão do modelo por meio de métricas como RMSE (Root Mean Squared Error), MAE (Mean Absolute Error) e MAPE (Mean Absolute Percentage Error), o que nos permitiu quantificar a acurácia das previsões. Embora o modelo tenha apresentado um desempenho razoável, existem possibilidades de melhoria. Essa análise fornece uma visão detalhada do processo de análise de séries temporais para previsão de preços da gasolina, destacando a importância da estacionariedade dos dados, ajuste de modelos e avaliação de desempenho para tomar decisões informadas no campo das previsões de preços.
+
